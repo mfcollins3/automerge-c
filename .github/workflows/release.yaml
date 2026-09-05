@@ -32,10 +32,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -46,7 +46,7 @@ jobs:
           mkdir -p release
           for dir in artifacts/*/; do
             name="$(basename "$dir")"
-            tar -czf "release/${name}.tar.gz" -C "$dir" .
+            tar -czf "release/${name}-${{ github.ref_name }}.tar.gz" -C "$dir" .
           done
 
           ls -la release

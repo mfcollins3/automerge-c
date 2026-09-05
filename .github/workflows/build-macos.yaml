@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-14 # Apple Silicon
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -53,7 +53,7 @@ jobs:
         run: cmake --install build --prefix "${{ github.workspace }}/dist/aarch64-apple-darwin"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: automerge-c-aarch64-apple-darwin
           path: dist/aarch64-apple-darwin
