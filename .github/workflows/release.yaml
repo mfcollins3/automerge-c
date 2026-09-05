@@ -1,0 +1,60 @@
+name: Release automerge-c
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS
+    uses: ./.github/workflows/build-macos.yaml
+
+  windows:
+    name: Windows
+    uses: ./.github/workflows/build-windows.yaml
+
+  linux:
+    name: Linux
+    uses: ./.github/workflows/build-linux.yaml
+
+  release:
+    name: Publish release
+    needs:
+      - macos
+      - windows
+      - linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+
+          mkdir -p release
+          for dir in artifacts/*/; do
+            name="$(basename "$dir")"
+            tar -czf "release/${name}.tar.gz" -C "$dir" .
+          done
+
+          ls -la release
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release/*.tar.gz \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

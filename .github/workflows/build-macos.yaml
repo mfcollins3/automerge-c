@@ -1,0 +1,60 @@
+name: Build automerge-c (macOS)
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (aarch64-apple-darwin)
+    runs-on: macos-14 # Apple Silicon
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install 1.90 --profile minimal --no-self-update
+          rustup toolchain install nightly --profile minimal --no-self-update
+          rustup component add rust-src --toolchain nightly
+          rustup default 1.90
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vendor/automerge/rust -> target
+          key: aarch64-apple-darwin
+
+      - name: Install build dependencies
+        run: brew install cmake
+
+      - name: Configure
+        run: |
+          cmake -E make_directory build
+          cmake --log-level=ERROR \
+            -S vendor/automerge/rust/automerge-c \
+            -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Install
+        run: cmake --install build --prefix "${{ github.workspace }}/dist/aarch64-apple-darwin"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: automerge-c-aarch64-apple-darwin
+          path: dist/aarch64-apple-darwin
+          if-no-files-found: error

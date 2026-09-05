@@ -1,0 +1,123 @@
+name: Build automerge-c (Linux)
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build-gnu:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          # Native Arm64 hosted runner. If this label isn't available on your
+          # account/plan, either drop this matrix entry or point it at a
+          # self-hosted Arm64 Linux runner instead.
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install 1.90 --profile minimal --no-self-update
+          rustup toolchain install nightly --profile minimal --no-self-update
+          rustup component add rust-src --toolchain nightly
+          rustup default 1.90
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vendor/automerge/rust -> target
+          key: ${{ matrix.target }}
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - name: Configure
+        run: |
+          cmake -E make_directory build
+          cmake --log-level=ERROR \
+            -S vendor/automerge/rust/automerge-c \
+            -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Install
+        run: cmake --install build --prefix "${{ github.workspace }}/dist/${{ matrix.target }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: automerge-c-${{ matrix.target }}
+          path: dist/${{ matrix.target }}
+          if-no-files-found: error
+
+  build-musl:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # The official `rust:alpine` image is a musl userland, so `rustc -vV`
+      # reports a musl host and automerge-c's CMakeLists.txt (which always
+      # targets the host triple it detects, with no override) builds musl
+      # objects automatically. Building runs via a plain `docker run` rather
+      # than the job-level `container:` option because GitHub Actions' JS
+      # actions (checkout, upload-artifact, ...) need a glibc-linked Node.js
+      # that isn't runnable inside an unmodified Alpine container.
+      - name: Build inside rust:alpine
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace rust:1-alpine sh -euc '
+            apk add --no-cache cmake make g++ musl-dev linux-headers
+
+            rustup toolchain install 1.90 --profile minimal --no-self-update
+            rustup toolchain install nightly --profile minimal --no-self-update
+            rustup component add rust-src --toolchain nightly
+            rustup default 1.90
+
+            cmake -E make_directory build
+            cmake --log-level=ERROR \
+              -S vendor/automerge/rust/automerge-c \
+              -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=OFF \
+              -DBUILD_TESTING=OFF
+            cmake --build build
+            cmake --install build --prefix "dist/${{ matrix.target }}"
+          '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: automerge-c-${{ matrix.target }}
+          path: dist/${{ matrix.target }}
+          if-no-files-found: error

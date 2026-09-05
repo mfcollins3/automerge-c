@@ -1,0 +1,80 @@
+name: Build automerge-c (Windows)
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025 # Intel/AMD x64
+            target: x86_64-pc-windows-msvc
+            msvc_arch: x64
+          # Native Arm64 hosted runner. If this label isn't available on your
+          # account/plan, either drop this matrix entry or point it at a
+          # self-hosted Arm64 Windows runner instead.
+          - os: windows-11-arm # Arm64
+            target: aarch64-pc-windows-msvc
+            msvc_arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Install Rust toolchains
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.90 --profile minimal --no-self-update
+          rustup toolchain install nightly --profile minimal --no-self-update
+          rustup component add rust-src --toolchain nightly
+          rustup default 1.90
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vendor/automerge/rust -> target
+          key: ${{ matrix.target }}
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -E make_directory build
+          cmake --log-level=ERROR `
+            -S vendor/automerge/rust/automerge-c `
+            -B build `
+            -G "NMake Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DBUILD_TESTING=OFF
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build
+
+      - name: Install
+        shell: pwsh
+        run: cmake --install build --prefix "${{ github.workspace }}/dist/${{ matrix.target }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: automerge-c-${{ matrix.target }}
+          path: dist/${{ matrix.target }}
+          if-no-files-found: error
